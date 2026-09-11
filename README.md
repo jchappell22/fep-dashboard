@@ -4,8 +4,11 @@ A web UI over the shared OpenFE and TMD installs on Conifer, so running a
 free-energy campaign is a form and a progress page rather than a tmux
 session and a folder of TSVs.
 
-It does three things:
+It does four things:
 
+- **Prepare inputs** — what OpenFE and TMD actually require from a protein
+  and a ligand series, plus a checker that reads your files and reports what
+  would fail.
 - **Launch** — pick engine, method, protein, ligands, GPUs; see the exact
   command that will run; start it.
 - **Runs** — live per-leg progress, ETA, logs, kill, resume.
@@ -94,8 +97,10 @@ engines/            THE COMMAND TEMPLATES -- edit these to fix a flag
   tmd.toml
 src/fepdash/
   app.py            home / status board
-  pages/            Launch, Runs, Results
+  pages/            Prepare inputs, Launch, Runs, Results
   core/
+    prep_check.py   dependency-free PDB/SDF input checks
+    plan_settings.py builds openfe's planning YAML from the Launch form
     driver.py       renders the campaign's driver.sh
     engines/base.py loads + renders the engine TOMLs
     launcher.py     detached spawn, kill, resume
@@ -194,6 +199,26 @@ shown but marked unusable — the `/opt` install README states OpenEye is not
 licensed here. `am1bcc` + `ambertools` is the verified combination, and it
 is also what matches TMD's `smirnoff_2_2_1_amber_am1bcc`, which is what
 makes the two engines comparable on the same series.
+
+### Input checks are structural, not chemical
+
+The Prepare page reads PDB and SDF files as **text** — the dashboard env has
+no RDKit, and adding one would defeat the point of keeping it installable
+anywhere. So it catches the mistakes that kill a campaign in its first
+minutes (a ligand left in the protein PDB, altLocs, 2D coordinates, missing
+hydrogens, duplicate molecule names, mixed net charge) and explicitly does
+not judge tautomers, protonation states, or perceived bond orders.
+
+Severity is calibrated so the checker stays worth listening to: ERROR means
+it will fail or give a meaningless answer, WARN means look before spending
+cards. An unrecognised residue in ATOM records is only a WARN, because the
+built-in residue list cannot be exhaustive — a correctly capped C-terminus
+is `NME` to Amber and `NMA` to other tools, and hard-failing on that would
+flag properly prepared proteins.
+
+Validated against real inputs: it passes the prepped protein from the ST4
+campaign and flags the un-prepped version of the same structure for
+alternate conformations.
 
 ### GPU claims
 
