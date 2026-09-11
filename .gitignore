@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Operator-specific; config.example.toml is the template that IS tracked.
+config.toml
+
+# Campaign output. A single RBFE campaign's work/ reaches tens of GB.
+runs/
+inputs/
+
+.pytest_cache/
+.DS_Store

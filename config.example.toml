@@ -1,0 +1,45 @@
+# fep-dashboard configuration.
+#
+# Copy to config.toml next to this file, or point FEPDASH_CONFIG at it:
+#
+#     export FEPDASH_CONFIG=/opt/fep-dashboard/config.toml
+#
+# Everything is optional -- anything omitted falls back to a repo-relative
+# default. On Conifer you typically only need [paths] runs_root and
+# [gpu] allowed.
+#
+# Relative paths resolve against THIS FILE, not the working directory,
+# because Streamlit's cwd is wherever the operator happened to launch it.
+
+[paths]
+# Where campaign directories are created. This fills up: a single RBFE
+# campaign's work/ can reach tens of GB, so put it on /data, not /home.
+runs_root = "/data/fep-runs"
+
+# Sqlite state file. Defaults to <runs_root>/state.db.
+# db_path = "/data/fep-runs/state.db"
+
+# Engine definition TOMLs. Edit these to fix a flag without touching code.
+# engines_dir = "engines"
+
+# Default directory the Launch page suggests for protein/ligand inputs.
+inputs_root = "/data/fep-inputs"
+
+# Helper scripts shipped with the repo (the OpenFE ABFE setup shim).
+# scripts_dir = "scripts"
+
+
+[gpu]
+# GPU indices this dashboard may schedule OpenFE legs onto. Conifer has four
+# RTX PRO 6000 Blackwell cards.
+#
+# This does NOT apply to TMD: `tmd-submit` picks the most-free card itself,
+# and the dashboard deliberately stays out of its way (see engines/tmd.toml).
+allowed = [0, 1, 2, 3]
+
+# Refuse to launch when a requested GPU is already claimed by another
+# campaign. Claims are advisory -- they cannot see jobs started outside the
+# dashboard, which is why the Launch page also shows live nvidia-smi state.
+#
+# Set false only to deliberately oversubscribe a card.
+enforce_locks = true

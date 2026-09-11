@@ -1,0 +1,161 @@
+# OpenFE engine definition.
+#
+# EVERY command the dashboard runs against openfe lives in this file. Nothing
+# in the Python code hardcodes an openfe flag. If GPU2's openfe differs from
+# what's written here, fix it HERE -- no code change, no redeploy.
+#
+# Driven through the shared /opt launcher at /usr/local/bin/openfe
+# (-> /opt/openfe/openfe-launcher.sh), which activates the right conda env
+# internally. No personal miniconda, no `conda activate` in the driver.
+#
+# Flags verified against openfe 1.10.0 locally (`openfe plan-rbfe-network
+# --help`, `openfe gather --help`, `openfe quickrun --help`). The box's
+# default is 1.11.1, with 1.12.0 and 1.8.1 also installed; if a flag moved
+# between those, fix it HERE.
+#
+# Placeholders in `cmd` strings are rendered by core/engines/base.py. The
+# available ones are listed per-section below. Unknown placeholders are a
+# hard error at render time, not a silent empty string.
+
+name = "openfe"
+label = "OpenFE (shared /opt install, OpenMM relative hybrid topology)"
+methods = ["rbfe", "abfe"]
+
+# OpenFE has no GPU scheduler of its own, so the dashboard pins one leg per
+# card and the Launch page offers an explicit GPU picker.
+gpu_selection = "explicit"
+
+[env]
+# Already on PATH via /usr/local/bin -- no conda handling required.
+binary = "openfe"
+
+# Versions installed under /opt/openfe. The Launch page turns this into a
+# dropdown; the chosen value is exported as OPENFE_VERSION, which the
+# launcher reads to pick an env for the call. Leaving it unset uses
+# /opt/openfe/current.
+[env.versions]
+default = ""                       # "" -> whatever `current` points at (1.11.1)
+available = ["", "1.12.0", "1.11.1", "1.8.1"]
+env_var = "OPENFE_VERSION"
+
+[env.exports]
+# Partial-charge generation during planning parallelises via -n; letting
+# each worker also spin up OpenMM CPU threads oversubscribes the box.
+OPENMM_CPU_THREADS = "1"
+
+
+# --------------------------------------------------------------------------
+# RBFE
+# --------------------------------------------------------------------------
+
+[rbfe.plan]
+# Placeholders: {ligands} {protein} {plan_dir} {n_repeats} {n_cores}
+#               {opt_cofactors} {opt_settings}
+# The {opt_*} ones render to "" when the campaign leaves them unset, or to
+# " -C /path" / " -s /path" when set -- note the leading space is included.
+cmd = """
+openfe plan-rbfe-network \
+  -M {ligands} \
+  -p {protein} \
+  -o {plan_dir} \
+  --n-protocol-repeats {n_repeats} \
+  -n {n_cores}{opt_cofactors}{opt_settings}
+"""
+# Planning also generates am1bcc partial charges, so it is CPU-heavy and can
+# take many minutes on a large ligand set. It runs as its own driver stage.
+stage_label = "plan network + charge ligands"
+
+# Where per-edge transformation JSONs land under plan_dir, and where the
+# ligand network graph lands. Both relative to plan_dir.
+jobs_glob = "transformations/*.json"
+network_graphml = "ligand_network.graphml"
+
+[rbfe.run]
+# One openfe process per leg. The driver fans these out across the selected
+# GPUs, one leg per GPU at a time, pulling from a shared queue.
+#
+# Placeholders: {job} {leg} {results_dir} {work_dir} {logs_dir} {opt_resume}
+cmd = """
+openfe quickrun {job} \
+  -o {results_dir}/{leg}.json \
+  -d {work_dir}/{leg}{opt_resume}
+"""
+# "per_gpu"  -- dashboard fans legs out over CUDA_VISIBLE_DEVICES
+# "single"   -- one process; the engine does its own GPU scheduling
+parallel = "per_gpu"
+# A leg counts as finished when this file exists (relative to campaign root).
+done_marker = "results/{leg}.json"
+
+[rbfe.gather]
+# Placeholders: {results_dir} {gathered_dir}
+#
+# --allow-partial lets the tables build while legs are still in flight, which
+# is what makes the Results page useful mid-campaign. Without it gather hard-
+# errors on any incomplete edge.
+cmds = [
+  "openfe gather {results_dir} --report ddg --allow-partial -o {gathered_dir}/ddg.tsv",
+  "openfe gather {results_dir} --report dg  --allow-partial -o {gathered_dir}/dg.tsv",
+  "openfe gather {results_dir} --report raw --allow-partial -o {gathered_dir}/raw.tsv",
+]
+ddg_table = "ddg.tsv"
+dg_table = "dg.tsv"
+raw_table = "raw.tsv"
+table_format = "tsv"
+
+# `openfe gather --report dg` needs >= 2 protocol repeats per edge to build
+# the MLE. Surfaced in the launch form so nobody discovers it 18h in.
+min_repeats_for_dg = 2
+
+
+# --------------------------------------------------------------------------
+# ABFE
+# --------------------------------------------------------------------------
+#
+# openfe 1.10 has `gather-abfe` but no `plan-abfe-network` CLI -- ABFE setup
+# goes through the Python layer. The dashboard therefore calls a small setup
+# shim shipped in scripts/ rather than an openfe subcommand.
+
+[abfe.plan]
+# Placeholders: {ligands} {protein} {plan_dir} {n_repeats} {n_cores}
+#               {opt_cofactors} {opt_settings} {scripts_dir}
+#
+# NOTE the explicit interpreter. The `openfe` launcher activates its env only
+# for its own subcommands -- it cannot run an arbitrary script -- so the shim
+# must be invoked with an OpenFE env's python directly. Change the path here
+# if you pin a non-default version for an ABFE campaign; unlike the RBFE path,
+# OPENFE_VERSION has no effect on this line.
+cmd = """
+/opt/openfe/current/bin/python {scripts_dir}/openfe_setup_abfe.py \
+  --ligands {ligands} \
+  --protein {protein} \
+  --output-dir {plan_dir} \
+  --n-protocol-repeats {n_repeats} \
+  --n-processors {n_cores}{opt_cofactors}{opt_settings}
+"""
+stage_label = "build ABFE transformations"
+jobs_glob = "transformations/*.json"
+network_graphml = ""
+
+[abfe.run]
+cmd = """
+openfe quickrun {job} \
+  -o {results_dir}/{leg}.json \
+  -d {work_dir}/{leg}{opt_resume}
+"""
+parallel = "per_gpu"
+done_marker = "results/{leg}.json"
+
+[abfe.gather]
+# NOTE: `gather-abfe` is flagged experimental by openfe itself, and unlike
+# `gather` it has NO --allow-partial (verified on 1.10.0). It therefore only
+# succeeds once every leg is done; the driver tolerates a non-zero exit here
+# and the Results page falls back to "not gathered yet".
+cmds = [
+  "openfe gather-abfe {results_dir} --report dg  -o {gathered_dir}/dg.tsv",
+  "openfe gather-abfe {results_dir} --report raw -o {gathered_dir}/raw.tsv",
+]
+ddg_table = ""
+dg_table = "dg.tsv"
+raw_table = "raw.tsv"
+table_format = "tsv"
+min_repeats_for_dg = 1

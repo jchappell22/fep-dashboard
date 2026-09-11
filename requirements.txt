@@ -1,0 +1,23 @@
+# fep-dashboard -- pinned for reproducible installs.
+#
+# Deliberately tiny. The dashboard NEVER imports openfe or tmd: it shells out
+# to the shared /usr/local/bin launchers, which activate their own /opt conda
+# envs internally. That is what lets the UI live in one small env while the
+# engines live in two mutually incompatible ones (TMD needs Python >=3.12 and
+# its own CUDA 13.2 runtime; OpenFE pins its own OpenMM stack).
+
+streamlit>=1.35,<2.0
+pandas>=2.0
+numpy>=1.24
+
+# tomllib joined stdlib in 3.11; tomli is the same parser backported.
+tomli>=2.0 ; python_version < "3.11"
+
+# OPTIONAL, not installed here:
+#
+#   openmmtools -- only for the "read sampler iteration" button on the Runs
+#                  page, which reports progress inside a live OpenFE leg by
+#                  opening its simulation.nc. It must match the build the
+#                  simulation is using, so if you want that button, run the
+#                  dashboard from the OpenFE env instead of its own. Every
+#                  other part of the page works without it.

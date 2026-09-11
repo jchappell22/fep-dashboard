@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Launch the FEP dashboard.
+#
+# Safe to run while campaigns are in flight: the dashboard only ever READS
+# the campaign directories. Campaign drivers are detached (their own process
+# group), so starting, stopping, or crashing this UI cannot affect a running
+# calculation.
+#
+# Run it in its own terminal; streamlit stays in the foreground. Ctrl-C to stop.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${FEPDASH_PORT:-8578}"
+
+# Bound to loopback deliberately: this box is shared and there is NO auth in
+# front of the dashboard -- and unlike a read-only status page, this one can
+# launch GPU jobs. Browse from the box's own desktop, or forward the port:
+#
+#     ssh -L 8578:localhost:8578 <user>@conifer
+#
+# Change to 0.0.0.0 only if you have decided the LAN should be able to start
+# jobs on these cards.
+ADDRESS="${FEPDASH_ADDRESS:-127.0.0.1}"
+
+export FEPDASH_CONFIG="${FEPDASH_CONFIG:-$REPO/config.toml}"
+
+if [ ! -f "$FEPDASH_CONFIG" ]; then
+    echo "WARNING: no config at $FEPDASH_CONFIG -- falling back to repo-relative"
+    echo "         defaults, which write campaigns into $REPO/runs."
+    echo "         Copy config.example.toml to config.toml and set runs_root."
+    echo
+fi
+
+command -v streamlit >/dev/null 2>&1 || {
+    echo "ERROR: streamlit not on PATH."
+    echo "  python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt"
+    exit 1
+}
+
+echo "=============================================================="
+echo "FEP dashboard"
+echo "  config : $FEPDASH_CONFIG"
+echo "  URL    : http://localhost:$PORT"
+echo
+echo "  Launch  -- start a campaign (shows the exact command first)"
+echo "  Runs    -- live leg progress, logs, kill / resume"
+echo "  Results -- ranked ligands, edge table, network consistency"
+echo
+echo "Engine availability:"
+for bin in openfe tmd-submit; do
+    if command -v "$bin" >/dev/null 2>&1; then
+        echo "  $bin -> $(command -v "$bin")"
+    else
+        echo "  $bin -> NOT FOUND (campaigns using it will fail at launch)"
+    fi
+done
+echo "=============================================================="
+echo
+
+cd "$REPO"
+# --server.headless suppresses the first-run email prompt and stops streamlit
+# trying to open a browser on a headless box.
+exec streamlit run src/fepdash/app.py \
+    --server.port "$PORT" \
+    --server.headless true \
+    --server.address "$ADDRESS"

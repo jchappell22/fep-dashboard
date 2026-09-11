@@ -1,0 +1,132 @@
+# TMD engine definition -- driven through the shared /opt launcher.
+#
+# Everything here goes through `tmd-submit`, the launcher at
+# /usr/local/bin/tmd-submit (-> /opt/tmd/submit_tmd.sh). The launcher
+# activates the shared conda env internally, so the dashboard needs no
+# conda handling at all and no personal miniconda.
+#
+# Source: the /opt install README (Conifer, 2026-07-14).
+#
+#   tmd-submit edge    --sdf ligands.sdf --pdb protein.pdb --a ejm_31 --b ejm_46
+#   tmd-submit network --sdf ligands.sdf --pdb protein.pdb --out runs/myset --bg
+#
+# !! STILL UNVERIFIED !! The two flags below are inferred rather than
+# documented in the README, and are the most likely things to be wrong:
+#   * whether `edge` accepts `--out` (assumed yes, mirroring `network`)
+#   * the exact result filenames written under --out
+# Paste `tmd-submit --help` (or the header of /opt/tmd/submit_tmd.sh) and
+# these can be pinned exactly. The Launch page shows the rendered command
+# before anything is spawned, so a mismatch is visible immediately.
+
+name = "tmd"
+label = "TMD 0.4.3 (Timemachine fork, /opt shared install)"
+# ABFE deliberately NOT declared. The tmd repo ships examples/run_abfe.py,
+# but the README documents only `edge` and `network` subcommands on the
+# launcher -- so there is no verified way to drive ABFE through it. Declaring
+# a method the launcher cannot run would put a broken option on the form.
+methods = ["rbfe", "edge"]
+
+# The launcher auto-picks the most-free GPU. The dashboard therefore must
+# NOT hand it a GPU set or export CUDA_VISIBLE_DEVICES -- doing so would
+# override the launcher's own choice and defeat the sharing behaviour the
+# box relies on. The Launch page hides the GPU picker for this engine.
+gpu_selection = "auto"
+
+[env]
+# On PATH already via /usr/local/bin -- no conda_root/conda_env needed.
+binary = "tmd-submit"
+
+[env.exports]
+# Nothing. In particular, do NOT set CUDA_VISIBLE_DEVICES here: it would
+# defeat the launcher's most-free-GPU selection.
+
+
+# --------------------------------------------------------------------------
+# RBFE -- whole network
+# --------------------------------------------------------------------------
+
+[rbfe.plan]
+# `tmd-submit network` does its own mapping and graph construction from the
+# SDF; there is no separate planning command to run.
+cmd = ""
+stage_label = "none -- tmd-submit builds the graph itself"
+jobs_glob = ""
+network_graphml = ""
+
+[rbfe.run]
+# Placeholders: {ligands} {protein} {results_dir}
+#
+# NOTE the absence of --bg. The README's example uses it for interactive
+# shell use, where you want your prompt back. Here the dashboard has already
+# detached the driver with start_new_session=True, and it tracks the campaign
+# by that pid. If tmd-submit forked into the background, the tracked pid
+# would exit within seconds and every campaign would report "finished"
+# while the real work was still running. Keep this in the foreground.
+cmd = """
+tmd-submit network \
+  --sdf {ligands} \
+  --pdb {protein} \
+  --out {results_dir}
+"""
+parallel = "single"
+done_marker = ""
+
+[rbfe.gather]
+# TMD writes its own tables as the run proceeds.
+cmds = []
+ddg_table = "ddg_results.csv"
+dg_table = "dg_results.csv"
+raw_table = ""
+table_format = "csv"
+tables_in = "results_dir"
+min_repeats_for_dg = 1
+
+
+# --------------------------------------------------------------------------
+# EDGE -- a single A -> B transformation
+# --------------------------------------------------------------------------
+# Useful for re-running one bad edge out of a finished network, or for a
+# quick sanity check before committing to a whole campaign.
+
+[edge.plan]
+cmd = ""
+stage_label = "none -- single edge"
+jobs_glob = ""
+network_graphml = ""
+
+[edge.run]
+# Placeholders: as rbfe.run, plus {ligand_a} {ligand_b}
+cmd = """
+tmd-submit edge \
+  --sdf {ligands} \
+  --pdb {protein} \
+  --a {ligand_a} \
+  --b {ligand_b} \
+  --out {results_dir}
+"""
+parallel = "single"
+done_marker = ""
+
+[edge.gather]
+cmds = []
+ddg_table = "ddg_results.csv"
+dg_table = ""
+raw_table = ""
+table_format = "csv"
+tables_in = "results_dir"
+min_repeats_for_dg = 1
+
+
+# --------------------------------------------------------------------------
+# Launch-form defaults
+# --------------------------------------------------------------------------
+# The launcher already defaults the forcefield to smirnoff_2_2_1_amber_am1bcc.py
+# (AmberTools AM1BCC) -- TMD's built-in smirnoff_2_0_0_ccc.py needs OpenEye
+# toolkits, which are not licensed on this box. That choice also matches
+# OpenFE's openff-2.2.1 + am1bcc, which is what makes the two engines
+# comparable on the same series. Left unset here so the launcher's default
+# wins; add it back only to override deliberately.
+
+[defaults]
+ligand_a = ""
+ligand_b = ""
