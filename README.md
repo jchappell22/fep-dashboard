@@ -51,7 +51,10 @@ Prefer a venv? `python -m venv .venv && . .venv/bin/activate && pip install
 -r requirements.txt` works too — `scripts/run_ui.sh` finds either. If you
 name the conda env something other than `fep-dash`, set `FEPDASH_ENV`.
 
-The `fep-dash` env is deliberately tiny — streamlit, pandas, numpy. It
+The `fep-dash` env is deliberately tiny — streamlit, pandas, numpy, and
+nothing else. Even the openfe settings YAML is emitted without PyYAML, so a
+missing package can never take the dashboard down on a box where installing
+one is a chore. It
 **never imports openfe or tmd**; it shells out to the `/usr/local/bin`
 launchers, which activate their own `/opt` conda envs internally. That is
 what lets one small UI env drive two mutually incompatible engine stacks.

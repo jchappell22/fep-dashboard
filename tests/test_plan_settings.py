@@ -231,3 +231,62 @@ def test_generated_yaml_is_valid_yaml(schema):
     data = yaml.safe_load(text)
     assert set(data) == {"mapper", "network", "partial_charge"}
     assert data["mapper"]["method"] == "kartograf"
+
+
+# ---------------------------------------------------------------------------
+# The hand-rolled emitter
+# ---------------------------------------------------------------------------
+# Emission is hand-rolled to keep the dashboard env free of PyYAML, so the
+# cases a naive emitter gets wrong are tested explicitly.
+
+
+def test_scalar_types_round_trip_through_a_real_yaml_parser():
+    emit = plan_settings._emit_scalar
+    cases = {
+        True: True,
+        False: False,
+        20: 20,
+        0.95: 0.95,
+        "kartograf": "kartograf",
+        # A LOMAP SMARTS seed -- brackets and '#' are YAML-significant.
+        "[#6][#6]": "[#6][#6]",
+        # Ligand names people actually have.
+        "lig: ejm-31": "lig: ejm-31",
+        'quote"inside': 'quote"inside',
+        "back\\slash": "back\\slash",
+        "": "",
+        "yes": "yes",  # bare `yes` would parse as a BOOLEAN unquoted
+        "123": "123",  # bare 123 would parse as an INT unquoted
+    }
+    for value, expected in cases.items():
+        parsed = yaml.safe_load(f"k: {emit(value)}")["k"]
+        assert parsed == expected, f"{value!r} -> {emit(value)!r} -> {parsed!r}"
+        assert type(parsed) is type(expected), f"{value!r} changed type"
+
+
+def test_bool_is_emitted_before_int():
+    """bool subclasses int in Python; checking int first would render
+    True as `1`, which openfe would then pass as an integer kwarg."""
+    assert plan_settings._emit_scalar(True) == "true"
+    assert plan_settings._emit_scalar(1) == "1"
+
+
+def test_smarts_seed_survives_into_openfe(schema, tmp_path):
+    """A LOMAP seed is the most adversarial string the form can produce."""
+    loader = _openfe_loader()
+    if loader is None:
+        pytest.skip("openfe not importable in this env")
+    _, load = loader
+
+    values = _defaults(schema)
+    values["mapper"] = "lomap"
+    for spec in schema["mapper"].fields_for("lomap"):
+        values[f"mapper.{spec.name}"] = spec.default
+    values["mapper.seed"] = "[#6][#6]"
+
+    text = plan_settings.build_yaml(schema, values)
+    assert yaml.safe_load(text)["mapper"]["settings"]["seed"] == "[#6][#6]"
+
+    path = tmp_path / "s.yaml"
+    path.write_text(text)
+    assert load(str(path), None).mapper is not None

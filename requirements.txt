@@ -10,10 +10,6 @@ streamlit>=1.35,<2.0
 pandas>=2.0
 numpy>=1.24
 
-# Emits the openfe planning settings YAML built from the Launch page.
-# Hand-rolling that emission is how a bool becomes `True` instead of `true`.
-pyyaml>=6.0
-
 # tomllib joined stdlib in 3.11; tomli is the same parser backported.
 tomli>=2.0 ; python_version < "3.11"
 
