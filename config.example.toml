@@ -12,18 +12,32 @@
 # because Streamlit's cwd is wherever the operator happened to launch it.
 
 [paths]
-# Where campaign directories are created. This fills up: a single RBFE
-# campaign's work/ can reach tens of GB, so put it on /data, not /home.
-runs_root = "/data/fep-runs"
+# Where campaign directories are created. `~` is expanded; a relative path
+# resolves against THIS FILE, not the working directory.
+#
+# YOU MUST CREATE THIS YOURSELF and own it -- the dashboard will not mkdir
+# into a directory you lack write access to, and refuses to start with a
+# readable message rather than half-creating a tree.
+#
+#     mkdir -p ~/fep-runs ~/fep-inputs
+#
+# SIZING: this fills up fast. A single RBFE campaign's work/ reaches tens of
+# GB, and nothing here is pruned automatically. If /home is a small or
+# quota'd volume on your box, move this to a data volume you own
+# (e.g. /data/$USER/fep-runs) before running a real campaign.
+runs_root = "~/fep-runs"
 
-# Sqlite state file. Defaults to <runs_root>/state.db.
-# db_path = "/data/fep-runs/state.db"
+# Sqlite state file. Defaults to <runs_root>/state.db, which is almost
+# always what you want -- it keeps the state next to what it describes.
+# db_path = "~/fep-runs/state.db"
 
 # Engine definition TOMLs. Edit these to fix a flag without touching code.
+# Defaults to <repo>/engines.
 # engines_dir = "engines"
 
 # Default directory the Launch page suggests for protein/ligand inputs.
-inputs_root = "/data/fep-inputs"
+# Nothing is written here; it is only the hint shown next to the path boxes.
+inputs_root = "~/fep-inputs"
 
 # Helper scripts shipped with the repo (the OpenFE ABFE setup shim).
 # scripts_dir = "scripts"

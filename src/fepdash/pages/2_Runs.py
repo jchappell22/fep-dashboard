@@ -23,6 +23,7 @@ from fepdash.core.config import load_config  # noqa: E402
 from fepdash.core.engines.base import load_engines  # noqa: E402
 from fepdash.core.models import CampaignStatus  # noqa: E402
 from fepdash.ui.common import (  # noqa: E402
+    require_usable_runs_root,
     fmt_duration,
     leg_table,
     page_header,
@@ -49,6 +50,7 @@ def _read_iteration(path_str: str, _mtime: float):
 
 
 cfg = load_config()
+require_usable_runs_root(cfg)
 _db.init_db(cfg.db_path)
 polling.poll_active(cfg)
 

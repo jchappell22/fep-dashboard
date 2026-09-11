@@ -43,6 +43,58 @@ class Config:
     enforce_gpu_locks: bool = True
 
 
+def check_runs_root(cfg: "Config") -> Optional[str]:
+    """Verify ``runs_root`` is usable. Returns an actionable message, or None.
+
+    Called before any DB access. Without it the first ``mkdir`` deep inside
+    ``db.connect`` raises a bare ``PermissionError`` and takes the whole page
+    down with a traceback pointing at pathlib -- which tells you nothing
+    about the fact that a path in *your config file* is wrong.
+
+    A misconfigured ``runs_root`` is the single most likely first-run
+    failure: whatever the config names has to be a directory this user can
+    actually create and write, and on a shared box that is easy to get
+    wrong.
+    """
+    runs_root = cfg.runs_root
+
+    # Walk up to the nearest existing ancestor -- that is the thing whose
+    # permissions actually decide whether the mkdir can succeed.
+    existing = runs_root
+    while not existing.exists() and existing != existing.parent:
+        existing = existing.parent
+
+    if runs_root.exists():
+        if not runs_root.is_dir():
+            return f"runs_root `{runs_root}` exists but is not a directory."
+        if not os.access(runs_root, os.W_OK | os.X_OK):
+            return (
+                f"runs_root `{runs_root}` exists but is not writable by "
+                f"{_whoami()}.\n\nEither grant write access, or point "
+                f"`[paths] runs_root` at a directory you own."
+            )
+        return None
+
+    if not os.access(existing, os.W_OK | os.X_OK):
+        return (
+            f"Cannot create runs_root `{runs_root}` — `{existing}` is not "
+            f"writable by {_whoami()}.\n\nFix `[paths] runs_root` in your "
+            f"config, or have someone create `{runs_root}` and give you "
+            f"write access. Campaign directories grow to tens of GB, so "
+            f"prefer a data volume over a home directory if you have one."
+        )
+    return None
+
+
+def _whoami() -> str:
+    try:
+        import getpass
+
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - identity is cosmetic here
+        return "this user"
+
+
 def repo_root() -> Path:
     """``<repo>`` -- three parents up from this file (src/fepdash/core)."""
     return Path(__file__).resolve().parents[3]

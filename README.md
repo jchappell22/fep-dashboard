@@ -73,7 +73,7 @@ ssh -L 8578:localhost:8578 <user>@conifer
 ## Try it without burning GPU time
 
 ```bash
-python -m fepdash.core.fixtures --runs-root /data/fep-runs
+python -m fepdash.core.fixtures --runs-root ~/fep-runs
 ```
 
 Fabricates campaigns covering the states that actually break things — legs

@@ -25,7 +25,12 @@ from fepdash.core.engines.base import (  # noqa: E402
     preview_commands,
 )
 from fepdash.core.models import Campaign, Method, new_campaign_id  # noqa: E402
-from fepdash.ui.common import gpu_board, gpu_selector, page_header  # noqa: E402
+from fepdash.ui.common import (  # noqa: E402
+    gpu_board,
+    gpu_selector,
+    page_header,
+    require_usable_runs_root,
+)
 
 st.set_page_config(page_title="Launch — FEP dashboard", page_icon="🚀", layout="wide")
 
@@ -52,6 +57,7 @@ def _referenced_variables(engine, method) -> set[str]:
     return names
 
 cfg = load_config()
+require_usable_runs_root(cfg)
 engines = load_engines(cfg.engines_dir)
 usable = {name: e for name, e in engines.items() if e.methods}
 

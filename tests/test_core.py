@@ -311,6 +311,45 @@ def test_dead_owner_claim_is_swept(tmp_path):
     assert _gpu.read_claims(tmp_path) == {}
 
 
+def test_unwritable_runs_root_is_reported_not_raised(tmp_path):
+    """An unwritable runs_root must produce an actionable message naming the
+    config, not a PermissionError out of pathlib. This is the most likely
+    first-run failure on a shared box."""
+    from fepdash.core.config import Config, check_runs_root
+
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)  # r-x: cannot create anything inside
+    try:
+        cfg = Config(
+            runs_root=locked / "runs",
+            db_path=locked / "runs" / "state.db",
+            engines_dir=ENGINES_DIR,
+            inputs_root=tmp_path,
+            scripts_dir=tmp_path,
+            allowed_gpus=(0,),
+        )
+        problem = check_runs_root(cfg)
+        assert problem is not None
+        assert "runs_root" in problem
+    finally:
+        locked.chmod(0o700)
+
+
+def test_writable_runs_root_passes(tmp_path):
+    from fepdash.core.config import Config, check_runs_root
+
+    cfg = Config(
+        runs_root=tmp_path / "runs",  # does not exist yet, but creatable
+        db_path=tmp_path / "runs" / "state.db",
+        engines_dir=ENGINES_DIR,
+        inputs_root=tmp_path,
+        scripts_dir=tmp_path,
+        allowed_gpus=(0,),
+    )
+    assert check_runs_root(cfg) is None
+
+
 def test_moved_campaign_is_found_under_runs_root(tmp_path):
     """A relocated runs tree must not orphan every campaign.
 

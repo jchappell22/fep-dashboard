@@ -30,6 +30,7 @@ from fepdash.ui.common import (  # noqa: E402
     campaign_summary_table,
     gpu_board,
     page_header,
+    require_usable_runs_root,
 )
 
 st.set_page_config(page_title="FEP dashboard", page_icon="🧬", layout="wide")
@@ -37,16 +38,18 @@ st.set_page_config(page_title="FEP dashboard", page_icon="🧬", layout="wide")
 
 def main() -> None:
     cfg = load_config()
+    page_header(
+        "FEP dashboard",
+        "Free energy campaigns across OpenFE and TMD, on this box's GPUs.",
+    )
+    # Before any DB access: a runs_root we cannot write to must produce a
+    # readable message, not a PermissionError traceback out of pathlib.
+    require_usable_runs_root(cfg)
     _db.init_db(cfg.db_path)
 
     # Notice any driver that exited since the last page load. Cheap: one
     # kill(pid, 0) per active campaign.
     transitions = polling.poll_active(cfg)
-
-    page_header(
-        "FEP dashboard",
-        "Free energy campaigns across OpenFE and TMD, on this box's GPUs.",
-    )
 
     if transitions:
         for campaign_id, status in transitions.items():

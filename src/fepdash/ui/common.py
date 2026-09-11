@@ -6,6 +6,7 @@ in ``core``; this module only turns those values into Streamlit calls.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -19,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from fepdash.core import db as _db
 from fepdash.core import gpu as _gpu
 from fepdash.core import state as _state
-from fepdash.core.config import Config
+from fepdash.core.config import Config, check_runs_root
 from fepdash.core.models import Campaign, CampaignStatus, Method
 
 
@@ -43,6 +44,39 @@ def page_header(title: str, subtitle: str = "") -> None:
     st.title(title)
     if subtitle:
         st.caption(subtitle)
+
+
+def require_usable_runs_root(cfg: Config) -> None:
+    """Stop the page with a readable error if runs_root is unusable.
+
+    Every page calls this before its first DB access. A config pointing at a
+    directory you cannot create is the most likely first-run failure, and
+    without this it surfaces as a PermissionError traceback from inside
+    pathlib -- which never mentions the config file that actually caused it.
+    """
+    problem = check_runs_root(cfg)
+    if problem is None:
+        return
+
+    st.error(problem)
+    st.markdown(
+        f"""
+**Where this comes from**
+
+| | |
+|---|---|
+| config file | `{os.environ.get("FEPDASH_CONFIG", "<none set — using defaults>")}` |
+| `runs_root` | `{cfg.runs_root}` |
+
+Point it somewhere you own, then reload:
+
+```toml
+[paths]
+runs_root = "{Path.home() / "fep-runs"}"
+```
+"""
+    )
+    st.stop()
 
 
 def fmt_duration(seconds: Optional[float]) -> str:

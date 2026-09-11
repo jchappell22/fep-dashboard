@@ -24,11 +24,12 @@ from fepdash.core import results as _results  # noqa: E402
 from fepdash.core import state as _state  # noqa: E402
 from fepdash.core.config import load_config  # noqa: E402
 from fepdash.core.engines.base import load_engines  # noqa: E402
-from fepdash.ui.common import page_header  # noqa: E402
+from fepdash.ui.common import page_header, require_usable_runs_root  # noqa: E402
 
 st.set_page_config(page_title="Results — FEP dashboard", page_icon="📈", layout="wide")
 
 cfg = load_config()
+require_usable_runs_root(cfg)
 _db.init_db(cfg.db_path)
 
 page_header("Results", "Per-ligand ΔG, per-edge ΔΔG, and network consistency.")
