@@ -158,6 +158,40 @@ already detached the driver and tracks the campaign by that pid. If
 seconds and every campaign would report "finished" while the real work ran
 on invisibly.
 
+### Network planning is configured in the UI, not a YAML
+
+`openfe plan-rbfe-network -s` takes a YAML choosing the atom mapper, the
+network planner, and the partial-charge method. Nobody hand-writes it: the
+Launch page renders widgets, and the dashboard generates the file into the
+campaign as `plan_settings.yaml` — so it doubles as the permanent record of
+how that network was planned.
+
+The options live in `engines/openfe.toml` under `[rbfe.settings]`, same as
+every other engine detail. Adding a planner openfe gained last week is a
+`[[rbfe.settings.network.choices]]` entry, no code change.
+
+Three things this handles that a hand-written YAML does not:
+
+- **Kartograf's hydrogen flag.** openfe applies a mapper section as
+  `cls(**settings)`, so any key you omit falls back to the *class* default.
+  But openfe's own no-YAML path sets `map_hydrogens_on_hydrogens_only=True`,
+  which its source calls a "non-default setting". Supplying a mapper section
+  and omitting that key therefore silently changes mapping behaviour versus
+  plain `openfe`. Every non-optional key is emitted explicitly to avoid it.
+- **Optional keys are omitted, never nulled.** openfe `setattr`s whatever it
+  reads, so a literal `None` sets the *string* `"None"` — which is what
+  openfe's own `DEFAULT_YAML` docstring mistakenly shows. Blank optional
+  fields drop the key instead.
+- **`generate_radial_network` blocks without a hub.** `central_ligand` has
+  no default; leaving it blank kills planning *after* charge generation, the
+  slow part. Pre-flight refuses the launch.
+
+Charge methods needing OpenEye, `openff-nagl`, or `espaloma_charge` are
+shown but marked unusable — the `/opt` install README states OpenEye is not
+licensed here. `am1bcc` + `ambertools` is the verified combination, and it
+is also what matches TMD's `smirnoff_2_2_1_amber_am1bcc`, which is what
+makes the two engines comparable on the same series.
+
 ### GPU claims
 
 Launching an OpenFE campaign claims its cards; the claim is released when
@@ -186,6 +220,13 @@ Built on a laptop with no access to Conifer, so be precise about this.
   that same install.
 - Results parsing, leg scanning, ETA, poller, and cycle-closure exercised
   against generated fixtures in both TSV and CSV dialects.
+- **The generated planning YAML, against openfe itself.** Every mapper ×
+  network combination the TOML declares is fed to openfe's own
+  `load_yaml_planner_options`, which does the registry lookups, constructs
+  the mapper as `cls(**settings)`, and builds `partial(func, **settings)`.
+  A misspelled method key or a kwarg that no longer exists fails there. Run
+  it in an OpenFE env: `/opt/openfe/current/bin/python -m pytest
+  tests/test_plan_settings.py -q` (it skips where openfe is absent).
 
 **Unverified** — check these before the first real campaign:
 

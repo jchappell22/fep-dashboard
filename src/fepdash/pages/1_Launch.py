@@ -17,6 +17,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fepdash.core import launcher  # noqa: E402
+from fepdash.core import plan_settings  # noqa: E402
 from fepdash.core.config import load_config  # noqa: E402
 from fepdash.core.driver import render_driver  # noqa: E402
 from fepdash.core.engines.base import (  # noqa: E402
@@ -116,7 +117,10 @@ with col_right:
 
     with st.expander("Optional inputs"):
         cofactors = st.text_input("Cofactors SDF", value="")
-        settings_yaml = st.text_input("Settings YAML (mapper / network / charges)", value="")
+        st.caption(
+            "Network planning (mapper / network / charges) is configured "
+            "below — the dashboard writes openfe's settings YAML for you."
+        )
 
 
 st.subheader("GPUs")
@@ -215,6 +219,111 @@ if slot == 0:
 
 
 # ---------------------------------------------------------------------------
+# Network planning settings
+# ---------------------------------------------------------------------------
+# Declared in the engine TOML, rendered here, written out as openfe's
+# settings YAML at launch. Nobody hand-writes that file.
+
+schema = plan_settings.load_schema(engine, method)
+
+if schema:
+    st.subheader("Network planning")
+    st.caption(
+        "These become the YAML passed to `openfe plan-rbfe-network -s`. The "
+        "generated file is written into the campaign directory as "
+        "`plan_settings.yaml`, so it stays the permanent record of how this "
+        "network was planned."
+    )
+
+    cols = st.columns(len(schema))
+    for col, (key, section) in zip(cols, schema.items()):
+        with col:
+            st.markdown(f"**{section.label}**")
+
+            # Options the box cannot actually run are shown but marked, so
+            # nobody wonders why a documented method is missing.
+            selectable = [c.value for c in section.choices]
+            chosen = st.selectbox(
+                section.label,
+                options=selectable,
+                index=selectable.index(section.default) if section.default in selectable else 0,
+                format_func=lambda v, s=section: (
+                    s.choice(v).label if s.choice(v) else v
+                ),
+                key=f"settings_{key}",
+                label_visibility="collapsed",
+                help=section.help,
+            )
+            params[f"settings.{key}"] = chosen
+
+            choice = section.choice(chosen)
+            if choice and choice.help:
+                st.caption(choice.help)
+            if choice and not choice.available:
+                st.error("Not usable on this box — see pre-flight below.")
+
+            for spec in section.fields_for(chosen):
+                widget_key = f"settings_{key}_{spec.name}"
+                label = spec.name.replace("_", " ")
+                if spec.type == "bool":
+                    val = st.checkbox(
+                        label, value=bool(spec.default), key=widget_key, help=spec.help
+                    )
+                elif spec.type == "int":
+                    val = st.number_input(
+                        label,
+                        value=int(spec.default or 0),
+                        step=1,
+                        min_value=int(spec.min) if spec.min is not None else None,
+                        max_value=int(spec.max) if spec.max is not None else None,
+                        key=widget_key,
+                        help=spec.help,
+                    )
+                elif spec.type == "float":
+                    val = st.number_input(
+                        label,
+                        value=float(spec.default or 0.0),
+                        step=float(spec.step or 0.1),
+                        key=widget_key,
+                        help=spec.help,
+                    )
+                elif spec.type == "choice":
+                    opts = list(spec.options)
+                    val = st.selectbox(
+                        label,
+                        options=opts,
+                        index=opts.index(spec.default) if spec.default in opts else 0,
+                        key=widget_key,
+                        help=spec.help,
+                    )
+                else:
+                    val = st.text_input(
+                        label,
+                        value=str(spec.default or ""),
+                        key=widget_key,
+                        help=spec.help,
+                        placeholder="required" if spec.required else "optional",
+                    )
+                params[f"settings.{key}.{spec.name}"] = val
+
+    settings_values = {
+        k[len("settings.") :]: v
+        for k, v in params.items()
+        if k.startswith("settings.")
+    }
+    generated_yaml = plan_settings.build_yaml(schema, settings_values)
+    with st.expander("Generated plan_settings.yaml"):
+        st.code(generated_yaml, language="yaml")
+else:
+    generated_yaml = ""
+    if engine.picks_own_gpu:
+        st.caption(
+            f"`{engine.name}` plans its own network internally — there is no "
+            f"settings file to configure."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Build the campaign object and preview
 # ---------------------------------------------------------------------------
 
@@ -226,7 +335,6 @@ campaign = Campaign(
     protein=Path(protein) if protein else Path(""),
     ligands=Path(ligands) if ligands else Path(""),
     cofactors=Path(cofactors) if cofactors else None,
-    settings_yaml=Path(settings_yaml) if settings_yaml else None,
     gpus=[int(g) for g in gpus],
     params=params,
     run_dir=cfg.runs_root / "PREVIEW",

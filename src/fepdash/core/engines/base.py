@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import shlex
 import string
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -130,6 +130,11 @@ class Engine:
     defaults: dict[str, Any]
     stages: dict[str, dict[str, StageSpec]]  # method -> stage -> spec
     source: Path
+    #: Raw per-method tables, keyed by method name. Holds everything under
+    #: ``[<method>]`` that is not a stage -- notably ``[<method>.settings]``,
+    #: the planning-settings schema. Kept raw so a new declarative section can
+    #: be added to an engine TOML without changing this dataclass.
+    method_raw: dict = dc_field(default_factory=dict)
     #: "explicit" -- the dashboard picks cards and pins them.
     #: "auto"     -- the engine's own launcher picks; the dashboard must not
     #:               interfere, must not export CUDA_VISIBLE_DEVICES, and must
@@ -245,6 +250,7 @@ def load_engine(path: Path) -> Engine:
         raise EngineError(f"{path}: no `methods` declared")
 
     stages: dict[str, dict[str, StageSpec]] = {}
+    method_raw: dict[str, dict] = {}
     for method in methods:
         section = raw.get(method)
         if not isinstance(section, dict):
@@ -262,6 +268,9 @@ def load_engine(path: Path) -> Engine:
                 cmds = (one,) if one.strip() else ()
             per_stage[stage] = StageSpec(cmds=cmds, raw=spec)
         stages[method] = per_stage
+        # Keep the whole method table; `settings` and anything added later
+        # lives here alongside the stages.
+        method_raw[method] = section
 
     return Engine(
         name=str(name),
@@ -271,6 +280,7 @@ def load_engine(path: Path) -> Engine:
         defaults=raw.get("defaults", {}) or {},
         stages=stages,
         source=path,
+        method_raw=method_raw,
         gpu_selection=str(raw.get("gpu_selection", "explicit")),
     )
 
@@ -313,6 +323,30 @@ def _broken(path: Path, exc: Exception) -> Engine:
 # ---------------------------------------------------------------------------
 
 
+def _settings_flag(campaign: Campaign) -> str:
+    """Render ``-s <settings.yaml>``, relative to $CAMPAIGN_DIR where possible.
+
+    The dashboard generates this file *into* the campaign directory, so it
+    must be referenced the same relocatable way as plan/, work/ and results/.
+    Baking the absolute path here would be the one line that breaks a moved
+    or archived campaign's driver.sh.
+
+    A path outside the campaign (a hand-set file) is still emitted absolute,
+    since there is nothing to make it relative to.
+    """
+    if not campaign.settings_yaml:
+        return ""
+    path = Path(campaign.settings_yaml)
+    if campaign.run_dir is not None:
+        try:
+            relative = path.relative_to(campaign.run_dir)
+        except ValueError:
+            pass  # outside the campaign; fall through to the absolute form
+        else:
+            return f' -s "$CAMPAIGN_DIR/{relative}"'
+    return f" -s {shlex.quote(str(path))}"
+
+
 def build_variables(
     campaign: Campaign,
     engine: Engine,
@@ -348,7 +382,7 @@ def build_variables(
         # optional flags -- rendered here so the conditional is testable and
         # the flag spelling stays in the TOML.
         "opt_cofactors": f" -C {shlex.quote(str(campaign.cofactors))}" if campaign.cofactors else "",
-        "opt_settings": f" -s {shlex.quote(str(campaign.settings_yaml))}" if campaign.settings_yaml else "",
+        "opt_settings": _settings_flag(campaign),
         "opt_resume": "",
         # Per-leg placeholders: the driver script substitutes these in bash,
         # so they must survive Python rendering untouched. Quoted, because a

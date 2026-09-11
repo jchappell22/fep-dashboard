@@ -97,6 +97,25 @@ def test_campaign_paths_are_relocatable(tmp_path, engines):
     assert str(tmp_path / "campaign" / "results") not in script
 
 
+def test_generated_settings_yaml_is_referenced_relatively(tmp_path, engines):
+    """The settings file the dashboard generates lives inside the campaign,
+    so `-s` must be $CAMPAIGN_DIR-relative like every other campaign path --
+    otherwise it is the single line that breaks a moved campaign."""
+    campaign = make_campaign(tmp_path)
+    campaign.settings_yaml = campaign.run_dir / "plan_settings.yaml"
+    script = render_driver(campaign, engines["openfe"])
+    assert '-s "$CAMPAIGN_DIR/plan_settings.yaml"' in script
+    assert str(campaign.run_dir / "plan_settings.yaml") not in script
+
+
+def test_settings_yaml_outside_the_campaign_stays_absolute(tmp_path, engines):
+    """A file that is not inside the campaign has nothing to be relative to."""
+    campaign = make_campaign(tmp_path)
+    campaign.settings_yaml = tmp_path / "elsewhere.yaml"
+    script = render_driver(campaign, engines["openfe"])
+    assert str(tmp_path / "elsewhere.yaml") in script
+
+
 @pytest.mark.parametrize(
     "engine_name,method",
     [("openfe", Method.RBFE), ("openfe", Method.ABFE),

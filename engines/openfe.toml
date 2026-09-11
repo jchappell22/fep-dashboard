@@ -159,3 +159,282 @@ dg_table = "dg.tsv"
 raw_table = "raw.tsv"
 table_format = "tsv"
 min_repeats_for_dg = 1
+
+
+# ==========================================================================
+# Network planning settings -- rendered into the YAML passed via `-s`
+# ==========================================================================
+#
+# The dashboard builds the settings YAML from these declarations, so the
+# Launch page can steer planning without anyone hand-writing a file.
+#
+# This covers the COMPLETE surface `openfe plan-rbfe-network -s` accepts:
+# `parse_yaml_planner_options` recognises exactly `mapper`, `network`, and
+# `partial_charge` and warns about anything else.
+#
+# Method `value`s below are the literal lowercase registry keys from
+# openfecli.parameters.plan_network_options (the pydantic models set
+# str_to_lower=True and the lookup dicts are keyed lowercase). Do not put a
+# display name here -- `label` is for that.
+#
+# TO ADD A FIELD: append a [[...fields]] entry with name/type/default and the
+# `applies_to` methods it belongs to. No Python change needed.
+#
+# Field `default`s are OPENFE'S CLI DEFAULTS, which for Kartograf are not the
+# same as the class defaults -- openfe's no-YAML path deliberately sets
+# map_hydrogens_on_hydrogens_only=true, calling it a "non-default setting".
+# Because a supplied YAML is applied as `cls(**settings)`, every omitted key
+# falls back to the CLASS default. So the dashboard always emits these
+# explicitly rather than omitting ones that look default: omitting would
+# silently change mapping behaviour relative to plain `openfe`.
+
+# ---- atom mapper ---------------------------------------------------------
+
+[rbfe.settings.mapper]
+label = "Atom mapper"
+default = "kartograf"
+help = "How atoms are matched between the two ligands of an edge. A bad mapping is the most common cause of an edge that will not converge."
+
+[[rbfe.settings.mapper.choices]]
+value = "kartograf"
+label = "Kartograf (openfe default)"
+help = "Geometry-based. Default since openfe 1.7.0."
+
+[[rbfe.settings.mapper.choices]]
+value = "lomap"
+label = "LOMAP"
+help = "The older MCS-based mapper."
+
+[[rbfe.settings.mapper.fields]]
+name = "atom_max_distance"
+type = "float"
+default = 0.95
+step = 0.05
+applies_to = ["kartograf"]
+help = "Maximum distance (Å) between two atoms for them to be mapped onto each other."
+
+[[rbfe.settings.mapper.fields]]
+name = "atom_map_hydrogens"
+type = "bool"
+default = true
+applies_to = ["kartograf"]
+help = "Include hydrogens in the mapping."
+
+[[rbfe.settings.mapper.fields]]
+name = "map_hydrogens_on_hydrogens_only"
+type = "bool"
+default = true
+applies_to = ["kartograf"]
+help = "Only map hydrogens to other hydrogens. openfe's CLI turns this ON even though the Kartograf class default is off -- constraint correction removes these later anyway."
+
+[[rbfe.settings.mapper.fields]]
+name = "map_exact_ring_matches_only"
+type = "bool"
+default = true
+applies_to = ["kartograf"]
+help = "Only map rings onto structurally identical rings."
+
+[[rbfe.settings.mapper.fields]]
+name = "allow_partial_fused_rings"
+type = "bool"
+default = true
+applies_to = ["kartograf"]
+help = "Permit mapping part of a fused ring system."
+
+[[rbfe.settings.mapper.fields]]
+name = "allow_bond_breaks"
+type = "bool"
+default = false
+applies_to = ["kartograf"]
+help = "Permit mappings that break a bond. Usually leave off -- these edges converge poorly."
+
+[[rbfe.settings.mapper.fields]]
+name = "time"
+type = "int"
+default = 20
+applies_to = ["lomap"]
+help = "Seconds allowed for the MCS search per pair."
+
+[[rbfe.settings.mapper.fields]]
+name = "threed"
+type = "bool"
+default = true
+applies_to = ["lomap"]
+help = "Use 3D coordinates to disambiguate the MCS."
+
+[[rbfe.settings.mapper.fields]]
+name = "max3d"
+type = "float"
+default = 1.0
+step = 0.1
+applies_to = ["lomap"]
+help = "Maximum 3D distance (Å) between mapped atoms."
+
+[[rbfe.settings.mapper.fields]]
+name = "element_change"
+type = "bool"
+default = true
+applies_to = ["lomap"]
+help = "Allow an atom to change element across the mapping."
+
+[[rbfe.settings.mapper.fields]]
+name = "shift"
+type = "bool"
+default = false
+applies_to = ["lomap"]
+help = "Shift the two molecules onto a common centroid before mapping."
+
+[[rbfe.settings.mapper.fields]]
+name = "seed"
+type = "str"
+default = ""
+optional = true
+applies_to = ["lomap"]
+help = "SMARTS seed for the MCS search. Leave blank to omit."
+
+# ---- network planner -----------------------------------------------------
+
+[rbfe.settings.network]
+label = "Network planner"
+default = "generate_minimal_spanning_network"
+help = "Which edges get simulated. Redundancy costs GPU time but is what makes the cycle-closure check on the Results page able to tell you anything."
+
+[[rbfe.settings.network.choices]]
+value = "generate_minimal_spanning_network"
+label = "Minimal spanning (openfe default)"
+help = "Fewest edges that connect every ligand. Cheapest, but a tree has no cycles -- the Results page cannot check consistency."
+
+[[rbfe.settings.network.choices]]
+value = "generate_minimal_redundant_network"
+label = "Minimal redundant"
+help = "Spanning network repeated N times, so every ligand has N independent paths. Recommended if you intend to trust the ranking."
+
+[[rbfe.settings.network.choices]]
+value = "generate_lomap_network"
+label = "LOMAP network"
+help = "LOMAP's own heuristics, including cycle covering."
+
+[[rbfe.settings.network.choices]]
+value = "generate_radial_network"
+label = "Radial (star)"
+help = "Every ligand mapped to one central hub ligand. Requires a hub."
+
+[[rbfe.settings.network.choices]]
+value = "generate_maximal_network"
+label = "Maximal (all pairs)"
+help = "Every pair. Edge count grows as N^2 -- this gets expensive fast."
+
+[[rbfe.settings.network.fields]]
+name = "mst_num"
+type = "int"
+default = 2
+min = 1
+max = 10
+applies_to = ["generate_minimal_redundant_network"]
+help = "How many independent spanning networks to overlay. 2 gives every ligand two disjoint paths."
+
+[[rbfe.settings.network.fields]]
+name = "central_ligand"
+type = "str"
+default = ""
+required = true
+applies_to = ["generate_radial_network"]
+help = "Name of the hub ligand. Must match exactly one molecule title in the SDF."
+
+[[rbfe.settings.network.fields]]
+name = "distance_cutoff"
+type = "float"
+default = 0.4
+step = 0.05
+applies_to = ["generate_lomap_network"]
+help = "Minimum LOMAP similarity score for an edge to be considered."
+
+[[rbfe.settings.network.fields]]
+name = "max_path_length"
+type = "int"
+default = 6
+applies_to = ["generate_lomap_network"]
+help = "Longest path allowed between any two ligands."
+
+[[rbfe.settings.network.fields]]
+name = "require_cycle_covering"
+type = "bool"
+default = true
+applies_to = ["generate_lomap_network"]
+help = "Ensure every ligand sits in a cycle. Keep on -- this is what makes cycle closure meaningful."
+
+[[rbfe.settings.network.fields]]
+name = "radial"
+type = "bool"
+default = false
+applies_to = ["generate_lomap_network"]
+help = "Build a star network around a hub instead."
+
+[[rbfe.settings.network.fields]]
+name = "fast"
+type = "bool"
+default = false
+applies_to = ["generate_lomap_network"]
+help = "Skip some of the more expensive graph refinement."
+
+[[rbfe.settings.network.fields]]
+name = "hub"
+type = "str"
+default = ""
+optional = true
+applies_to = ["generate_lomap_network"]
+help = "Hub ligand name, used when `radial` is on. Leave blank to omit."
+
+# ---- partial charges -----------------------------------------------------
+
+[rbfe.settings.partial_charge]
+label = "Partial charges"
+default = "am1bcc"
+help = "Generated once up front for every ligand, so the whole network shares one consistent set. This is the CPU-bound part of planning."
+
+[[rbfe.settings.partial_charge.choices]]
+value = "am1bcc"
+label = "AM1BCC / AmberTools (recommended)"
+help = "The only combination verified installed on this box. Also matches TMD's smirnoff_2_2_1_amber_am1bcc default, which is what makes the two engines comparable on the same series."
+
+[[rbfe.settings.partial_charge.choices]]
+value = "am1bccelf10"
+label = "AM1BCC ELF10 — needs OpenEye (NOT licensed here)"
+available = false
+help = "Requires the OpenEye toolkits, which the /opt install README states are not licensed on this box. Will fail."
+
+[[rbfe.settings.partial_charge.choices]]
+value = "nagl"
+label = "NAGL — needs openff-nagl"
+available = false
+help = "Requires openff-nagl in the OpenFE env. Check before selecting."
+
+[[rbfe.settings.partial_charge.choices]]
+value = "espaloma"
+label = "Espaloma — needs espaloma_charge"
+available = false
+help = "Requires espaloma_charge in the OpenFE env. Check before selecting."
+
+[[rbfe.settings.partial_charge.fields]]
+name = "off_toolkit_backend"
+type = "choice"
+default = "ambertools"
+options = ["ambertools", "openeye", "rdkit"]
+applies_to = ["am1bcc", "am1bccelf10", "nagl", "espaloma"]
+help = "Toolkit used to run the charge assignment. `openeye` is not licensed on this box."
+
+[[rbfe.settings.partial_charge.fields]]
+name = "number_of_conformers"
+type = "int"
+default = 0
+optional = true
+applies_to = ["am1bcc", "am1bccelf10"]
+help = "Conformers to average charges over. 0 = omit the key and let openfe decide (its own default is None)."
+
+[[rbfe.settings.partial_charge.fields]]
+name = "nagl_model"
+type = "str"
+default = ""
+optional = true
+applies_to = ["nagl"]
+help = "NAGL model file. Leave blank to omit."

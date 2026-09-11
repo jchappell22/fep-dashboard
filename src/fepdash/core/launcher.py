@@ -34,6 +34,7 @@ from typing import Optional
 
 from . import db as _db
 from . import gpu as _gpu
+from . import plan_settings
 from .config import Config
 from .driver import write_driver
 from .engines.base import Engine
@@ -103,6 +104,18 @@ def preflight(campaign: Campaign, engine: Engine, cfg: Config) -> list[str]:
             )
             problems.append(f"GPU already claimed: {detail}")
 
+    # Planning-settings problems (e.g. a radial network with no hub ligand
+    # named). These kill planning AFTER charge generation -- the slow part --
+    # so they belong on the form, not in a log an hour from now.
+    schema = plan_settings.load_schema(engine, campaign.method)
+    if schema:
+        values = {
+            key[len("settings.") :]: value
+            for key, value in campaign.params.items()
+            if key.startswith("settings.")
+        }
+        problems.extend(plan_settings.validate(schema, values))
+
     # OpenFE's `gather --report dg` builds an MLE across repeats and needs at
     # least two per edge. Better to say so on the form than 18 hours later.
     min_repeats = engine.stage(campaign.method, "gather").get("min_repeats_for_dg", 1)
@@ -120,6 +133,33 @@ def preflight(campaign: Campaign, engine: Engine, cfg: Config) -> list[str]:
 # ---------------------------------------------------------------------------
 # Launch
 # ---------------------------------------------------------------------------
+
+
+def write_plan_settings(campaign: Campaign, engine: Engine) -> Optional[Path]:
+    """Write the campaign's planning-settings YAML. None if not applicable.
+
+    The values come from ``campaign.params`` under a ``settings.`` prefix,
+    put there by the Launch page. Engines that declare no settings schema
+    (TMD, whose launcher owns its own defaults; OpenFE ABFE, which involves
+    no network planner) get nothing, and ``settings_yaml`` stays unset so
+    the ``-s`` flag is never rendered.
+    """
+    schema = plan_settings.load_schema(engine, campaign.method)
+    if not schema:
+        return None
+
+    values = {
+        key[len("settings.") :]: value
+        for key, value in campaign.params.items()
+        if key.startswith("settings.")
+    }
+    text = plan_settings.build_yaml(schema, values)
+    if not text.strip():
+        return None
+
+    path = campaign.run_dir / "plan_settings.yaml"
+    path.write_text(text)
+    return path
 
 
 def allocate_run_dir(runs_root: Path, campaign_id: str) -> Path:
@@ -160,6 +200,15 @@ def launch_campaign(
     _db.init_db(cfg.db_path)
     run_dir = allocate_run_dir(cfg.runs_root, campaign.campaign_id)
     campaign.run_dir = run_dir
+
+    # 1b. Materialise the planning settings YAML, if this engine/method has
+    #     any. Written INTO the campaign so it is part of the permanent
+    #     record of how the network was planned -- not a file elsewhere on
+    #     disk that someone may edit or delete before you come to reproduce
+    #     the run. `settings_yaml` is then just a path like any other.
+    settings_path = write_plan_settings(campaign, engine)
+    if settings_path is not None:
+        campaign.settings_yaml = settings_path
 
     # 2. Forensic trail before anything can fail.
     campaign.manifest_path.write_text(json.dumps(campaign.to_dict(), indent=2))
