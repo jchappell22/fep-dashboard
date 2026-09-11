@@ -1,0 +1,35 @@
+# Conda env for the fep-dashboard UI.
+#
+#   mamba env create -f environment.yml      # creates `fep-dash`
+#   mamba activate fep-dash
+#
+# This env holds ONLY the UI. It deliberately does not contain openfe or tmd:
+# the dashboard shells out to the /usr/local/bin launchers, which activate
+# their own /opt envs internally. Keeping them apart is what lets one small
+# UI env drive two mutually incompatible engine stacks (TMD needs Python
+# >=3.12 and its own CUDA 13.2 runtime; OpenFE pins its own OpenMM build).
+#
+# Pins mirror requirements.txt.
+
+name: fep-dash
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pip
+  - streamlit>=1.35,<2.0
+  - pandas>=2.0
+  - numpy>=1.24
+
+  # Test-only; harmless to install everywhere.
+  - pytest>=7.0
+
+  # NOT included, on purpose:
+  #
+  #   openmmtools -- only needed for the Runs page's "read sampler iteration"
+  #   button, which opens a live OpenFE leg's simulation.nc. It must match the
+  #   build the simulation is using, so installing a second copy here would be
+  #   worse than not having it. If you want that button, run the dashboard
+  #   from an OpenFE env instead. Every other part of the page works without.

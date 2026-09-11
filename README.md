@@ -39,14 +39,19 @@ edit, and re-run by hand with no dashboard involved.
 ```bash
 git clone <this repo> /opt/fep-dashboard      # or anywhere on the box
 cd /opt/fep-dashboard
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
+
+mamba env create -f environment.yml            # creates `fep-dash`
+mamba activate fep-dash
 
 cp config.example.toml config.toml
 $EDITOR config.toml                            # set runs_root and allowed GPUs
 ```
 
-The dashboard's env is deliberately tiny — streamlit, pandas, numpy. It
+Prefer a venv? `python -m venv .venv && . .venv/bin/activate && pip install
+-r requirements.txt` works too — `scripts/run_ui.sh` finds either. If you
+name the conda env something other than `fep-dash`, set `FEPDASH_ENV`.
+
+The `fep-dash` env is deliberately tiny — streamlit, pandas, numpy. It
 **never imports openfe or tmd**; it shells out to the `/usr/local/bin`
 launchers, which activate their own `/opt` conda envs internally. That is
 what lets one small UI env drive two mutually incompatible engine stacks.

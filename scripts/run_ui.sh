@@ -31,15 +31,42 @@ if [ ! -f "$FEPDASH_CONFIG" ]; then
     echo
 fi
 
-command -v streamlit >/dev/null 2>&1 || {
-    echo "ERROR: streamlit not on PATH."
-    echo "  python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt"
+# ---- find streamlit ------------------------------------------------------
+# Resolved in this order so the script works whether or not you remembered to
+# activate anything: an already-active env, then the repo's own conda env,
+# then a local .venv.
+#
+# Note this is about the DASHBOARD's env only. The engines need no activation
+# at all -- `openfe` and `tmd-submit` are launchers in /usr/local/bin that
+# activate their own /opt envs internally.
+ENV_NAME="${FEPDASH_ENV:-fep-dash}"
+
+find_streamlit() {
+    command -v streamlit 2>/dev/null && return 0
+    for root in "${CONDA_ROOT:-}" "$HOME/miniconda3" "$HOME/mambaforge" \
+                "$HOME/miniforge3" /opt/conda; do
+        [ -n "$root" ] && [ -x "$root/envs/$ENV_NAME/bin/streamlit" ] \
+            && echo "$root/envs/$ENV_NAME/bin/streamlit" && return 0
+    done
+    [ -x "$REPO/.venv/bin/streamlit" ] && echo "$REPO/.venv/bin/streamlit" && return 0
+    return 1
+}
+
+STREAMLIT="$(find_streamlit)" || {
+    echo "ERROR: streamlit not found (looked on PATH, in conda env '$ENV_NAME',"
+    echo "       and in $REPO/.venv)."
+    echo
+    echo "  mamba env create -f environment.yml     # creates '$ENV_NAME'"
+    echo "  mamba activate $ENV_NAME"
+    echo
+    echo "Or set FEPDASH_ENV=<name> if your env is called something else."
     exit 1
 }
 
 echo "=============================================================="
 echo "FEP dashboard"
 echo "  config : $FEPDASH_CONFIG"
+echo "  python : $STREAMLIT"
 echo "  URL    : http://localhost:$PORT"
 echo
 echo "  Launch  -- start a campaign (shows the exact command first)"
@@ -60,7 +87,7 @@ echo
 cd "$REPO"
 # --server.headless suppresses the first-run email prompt and stops streamlit
 # trying to open a browser on a headless box.
-exec streamlit run src/fepdash/app.py \
+exec "$STREAMLIT" run src/fepdash/app.py \
     --server.port "$PORT" \
     --server.headless true \
     --server.address "$ADDRESS"
